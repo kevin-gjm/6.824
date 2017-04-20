@@ -1,0 +1,6 @@
+pkg/
+bin/
+.vscode/
+api.key
+*-handin.tar.gz
+Makefile
