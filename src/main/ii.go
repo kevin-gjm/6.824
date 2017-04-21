@@ -32,8 +32,12 @@ func reduceF(key string, values []string) string {
 	// TODO: you should complete this to do the inverted index challenge
 	ret := ""
 	count := 0
+	m := make(map[string]string)
 	for _, v := range values {
-		ret = ret + " " + v
+		m[v] = v
+	}
+	for i := range m {
+		ret = ret + "," + i
 		count++
 	}
 	return string(count) + " " + ret
