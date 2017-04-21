@@ -16,7 +16,7 @@ import (
 func mapF(document string, value string) (res []mapreduce.KeyValue) {
 	// TODO: you have to write this function
 	f := func(c rune) bool {
-		return !unicode.IsLetter(c) && !unicode.IsNumber(c)
+		return !unicode.IsLetter(c)// && !unicode.IsNumber(c)
 	}
 	temp := strings.FieldsFunc(string(value), f)
 	for _, v := range temp {

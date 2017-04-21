@@ -17,7 +17,7 @@ import (
 func mapF(document string, value string) (res []mapreduce.KeyValue) {
 	// TODO: you should complete this to do the inverted index challenge
 	f := func(c rune) bool {
-		return !unicode.IsLetter(c) && !unicode.IsNumber(c)
+		return !unicode.IsLetter(c)// && !unicode.IsNumber(c)
 	}
 	temp := strings.FieldsFunc(string(value), f)
 	for _, v := range temp {
