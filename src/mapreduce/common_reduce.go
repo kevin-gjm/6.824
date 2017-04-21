@@ -56,9 +56,9 @@ func doReduce(
 			var kv KeyValue
 			err := dec[i].Decode(&kv)
 			if err != nil {
-				m[kv.Key] = append(m[kv.Key], kv.Value) // 将所有同样key存储在一起，之后交由reduceF进行处理
-			} else {
 				break
+			} else {
+				m[kv.Key] = append(m[kv.Key], kv.Value) // 将所有同样key存储在一起，之后交由reduceF进行处理
 			}
 		}
 
@@ -77,4 +77,5 @@ func doReduce(
 	}
 
 	file.Close()
+
 }
