@@ -68,10 +68,10 @@ func (mr *Master) schedule(phase jobPhase) {
 				ok := call(idleworker, "Worker.DoTask", args, new(struct{}))
 				if ok {
 					wg.Done()
+					///放在if里面因为可能是worker本身错误，若是这样放在外面可能还会导致失败(失败继续就是了？？测试看看吧)
+					mr.registerChannel <- idleworker
 				}
-				///XXX
-				///放在这里还是if里面？？错误单纯的是计算错误？还是worker本身的错误？？
-				mr.registerChannel <- idleworker
+
 			}
 
 		}(i)
