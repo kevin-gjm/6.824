@@ -47,8 +47,46 @@ func (mr *Master) schedule(phase jobPhase) {
 			3.中间执行过程中若有失败情况，则需要重新执行此项任务
 			4.实验手册中提示：Hint: You may find sync.WaitGroup useful.
 	*/
+	// idleworker := make(chan string)
+	// // jobs := make(chan int)
+	// doneworks := make(chan bool)
+	// go func() {
+	// 	for {
+	// 		newRegister := <-mr.registerChannel
+	// 		idleworker <- newRegister
+	// 	}
+	// }()
+	// go func() {
+	// 	for idx := 0; idx < ntasks; idx++ {
+
+	// 		go func(idx int) {
+
+	// 			args := new(DoTaskArgs)
+	// 			args.JobName = mr.jobName
+	// 			args.TaskNumber = idx
+	// 			args.NumOtherPhase = nios
+	// 			args.Phase = phase
+	// 			if phase == mapPhase {
+	// 				args.File = mr.files[idx]
+	// 			}
+	// 			for {
+	// 				availableworker := <-idleworker
+	// 				debug("worker: %s", availableworker)
+	// 				ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
+	// 				if ok == true {
+	// 					doneworks <- true
+	// 					idleworker <- availableworker
+	// 					break
+	// 				} else {
+	// 					//jobs <- idx
+	// 				}
+	// 			}
+
+	// 		}(idx)
+	// 	}
+	// }()
 	idleworker := make(chan string)
-	// jobs := make(chan int)
+	jobs := make(chan int)
 	doneworks := make(chan bool)
 	go func() {
 		for {
@@ -57,24 +95,23 @@ func (mr *Master) schedule(phase jobPhase) {
 		}
 	}()
 
-	// go func() {
-	// 	for _, w := range mr.workers {
-	// 		idleworker <- w
-	// 	}
-	// }()
-
-	// go func() {
-	// 	for i := 0; i < ntasks; i++ {
-	// 		jobs <- i
-	// 	}
-	// }()
+	go func() {
+		for _, w := range mr.workers {
+			idleworker <- w
+		}
+	}()
 
 	go func() {
-		//for idx := range jobs {
-		for idx := 0; idx < ntasks; idx++ {
+		for i := 0; i < ntasks; i++ {
+			jobs <- i
+		}
+	}()
 
-			go func(idx int) {
-
+	go func() {
+		for idx := range jobs {
+			availableworker := <-idleworker
+			go func(idx int, availableworker string) {
+				debug("worker: %s", availableworker)
 				args := new(DoTaskArgs)
 				args.JobName = mr.jobName
 				args.TaskNumber = idx
@@ -83,27 +120,24 @@ func (mr *Master) schedule(phase jobPhase) {
 				if phase == mapPhase {
 					args.File = mr.files[idx]
 				}
-				for {
-					availableworker := <-idleworker
-					debug("worker: %s", availableworker)
-					ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
-					if ok == true {
-						doneworks <- true
-						idleworker <- availableworker
-						break
-					} else {
-						//jobs <- idx
-					}
+				ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
+				if ok == true {
+					doneworks <- true
+					idleworker <- availableworker
+				} else {
+					jobs <- idx
 				}
-
-			}(idx)
+			}(idx, availableworker)
 		}
 	}()
 
 	for i := 0; i < ntasks; i++ {
 		<-doneworks
 	}
-	//close(jobs)
+	close(jobs)
+	// for i := 0; i < ntasks; i++ {
+	// 	<-doneworks
+	// }
 
 	//ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
 	// idleworker := make(chan string)
