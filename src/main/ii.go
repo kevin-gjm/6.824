@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"mapreduce"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -32,6 +34,7 @@ func reduceF(key string, values []string) string {
 	// TODO: you should complete this to do the inverted index challenge
 	ret := ""
 	count := 0
+	sort.Strings(values)
 	m := make(map[string]string)
 	for _, v := range values {
 		m[v] = v
@@ -40,7 +43,7 @@ func reduceF(key string, values []string) string {
 		ret = ret + "," + i
 		count++
 	}
-	return string(count) + " " + ret
+	return strconv.Itoa(count) + " " + ret
 }
 
 // Can be run in 3 ways:
