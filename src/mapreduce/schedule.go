@@ -47,6 +47,25 @@ func (mr *Master) schedule(phase jobPhase) {
 			3.任务可能比worker多，所以worker执行完成后需要让其他任务继续使用
 			3.中间执行过程中若有失败情况，则需要重新执行此项任务
 			4.实验手册中提示：Hint: You may find sync.WaitGroup useful.
+
+			坑：
+			此处如果使用如下代码,测试不通过
+
+			if phase==mapPhase{
+				args.File = mr.files[i]
+			}
+
+
+			使用下面代码则通过
+			if phase==mapPhase{
+				args.File = mr.files[i]
+			}else{
+				args.File = ""
+			}
+
+			FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！
+			FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！FUCK！！
+			搞了半下午，靠！！！！！
 	*/
 
 	var wg sync.WaitGroup
