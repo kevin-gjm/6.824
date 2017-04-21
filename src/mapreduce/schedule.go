@@ -2,6 +2,7 @@ package mapreduce
 
 import (
 	"fmt"
+	"sync"
 )
 
 // schedule starts and waits for all tasks in the given phase (Map or Reduce).
@@ -48,10 +49,9 @@ func (mr *Master) schedule(phase jobPhase) {
 			4.实验手册中提示：Hint: You may find sync.WaitGroup useful.
 	*/
 
-	// var wg sync.WaitGroup
-
-	// wg.Add(ntasks)
-	cFinish := make(chan bool)
+	var wg sync.WaitGroup
+	wg.Add(ntasks)
+	//cFinish := make(chan bool)
 
 	for i := 0; i < ntasks; i++ {
 		go func(i int) {
@@ -61,18 +61,12 @@ func (mr *Master) schedule(phase jobPhase) {
 			args.NumOtherPhase = nios
 			args.Phase = phase
 			args.TaskNumber = i
-			// args := &DoTaskArgs{
-			// 	JobName:       mr.jobName,
-			// 	File:          mr.files[i],
-			// 	Phase:         phase,
-			// 	TaskNumber:    i,
-			// 	NumOtherPhase: nios}
 			for {
 				worker := <-mr.registerChannel
 				ok := call(worker, "Worker.DoTask", args, new(struct{}))
 				if ok {
-					// wg.Done()
-					cFinish <- true
+					wg.Done()
+					//cFinish <- true
 					///放在if里面因为可能是worker本身错误，若是这样放在外面可能还会导致失败(失败继续就是了？？测试看看吧)
 					mr.registerChannel <- worker
 					break
@@ -81,10 +75,10 @@ func (mr *Master) schedule(phase jobPhase) {
 
 		}(i)
 	}
-	// wg.Wait()
-	for i := 0; i < ntasks; i++ {
-		<-cFinish
-	}
+	wg.Wait()
+	// for i := 0; i < ntasks; i++ {
+	// 	<-cFinish
+	// }
 
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
