@@ -55,20 +55,18 @@ func (mr *Master) schedule(phase jobPhase) {
 
 	for i := 0; i < ntasks; i++ {
 		go func(i int) {
-			// args := new(DoTaskArgs)
-			// if phase == "mapPhase" {
-			// 	args.File = mr.files[i]
-			// }
-			// args.JobName = mr.jobName
-			// args.NumOtherPhase = nios
-			// args.Phase = phase
-			// args.TaskNumber = i
-			args := &DoTaskArgs{
-				JobName:       mr.jobName,
-				File:          mr.files[i],
-				Phase:         phase,
-				TaskNumber:    i,
-				NumOtherPhase: nios}
+			args := new(DoTaskArgs)
+			args.File = mr.files[i]
+			args.JobName = mr.jobName
+			args.NumOtherPhase = nios
+			args.Phase = phase
+			args.TaskNumber = i
+			// args := &DoTaskArgs{
+			// 	JobName:       mr.jobName,
+			// 	File:          mr.files[i],
+			// 	Phase:         phase,
+			// 	TaskNumber:    i,
+			// 	NumOtherPhase: nios}
 			for {
 				worker := <-mr.registerChannel
 				ok := call(worker, "Worker.DoTask", args, new(struct{}))
