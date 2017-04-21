@@ -2,6 +2,7 @@ package mapreduce
 
 import (
 	"fmt"
+	"sync"
 )
 
 // schedule starts and waits for all tasks in the given phase (Map or Reduce).
@@ -99,9 +100,16 @@ func (mr *Master) schedule(phase jobPhase) {
 	// close(jobs)
 
 	//ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
-	//var wg sync.WaitGroup
-	doneworks := make(chan bool)
-	//wg.Add(ntasks)
+	idleworker := make(chan string)
+	go func() {
+		for {
+			newRegister := <-mr.registerChannel
+			idleworker <- newRegister
+		}
+	}()
+	var wg sync.WaitGroup
+
+	wg.Add(ntasks)
 	for i := 0; i < ntasks; i++ {
 		go func(i int) {
 			args := new(DoTaskArgs)
@@ -113,26 +121,20 @@ func (mr *Master) schedule(phase jobPhase) {
 			args.Phase = phase
 			args.TaskNumber = i
 			for {
-				idleworker := <-mr.registerChannel
-				debug("worker:%s\n", idleworker)
-				ok := call(idleworker, "Worker.DoTask", args, new(struct{}))
+				worker := <-idleworker
+				debug("worker:%s\n", worker)
+				ok := call(worker, "Worker.DoTask", args, new(struct{}))
 				if ok {
-					//wg.Done()
-					doneworks <- true
+					wg.Done()
 					///放在if里面因为可能是worker本身错误，若是这样放在外面可能还会导致失败(失败继续就是了？？测试看看吧)
-					mr.registerChannel <- idleworker
+					idleworker <- worker
 					break
 				}
-
 			}
 
 		}(i)
 	}
-
-	//wg.Wait()
-	// for i := 0; i < ntasks; i++ {
-	// 	<-doneworks
-	// }
+	wg.Wait()
 
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
