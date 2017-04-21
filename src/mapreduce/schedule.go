@@ -47,15 +47,15 @@ func (mr *Master) schedule(phase jobPhase) {
 			3.中间执行过程中若有失败情况，则需要重新执行此项任务
 			4.实验手册中提示：Hint: You may find sync.WaitGroup useful.
 	*/
-	// idleworker := make(chan string)
+	idleworker := make(chan string)
 	// jobs := make(chan int)
-	// doneworks := make(chan bool)
-	// go func() {
-	// 	for {
-	// 		newRegister := <-mr.registerChannel
-	// 		idleworker <- newRegister
-	// 	}
-	// }()
+	doneworks := make(chan bool)
+	go func() {
+		for {
+			newRegister := <-mr.registerChannel
+			idleworker <- newRegister
+		}
+	}()
 
 	// go func() {
 	// 	for _, w := range mr.workers {
@@ -69,75 +69,82 @@ func (mr *Master) schedule(phase jobPhase) {
 	// 	}
 	// }()
 
-	// go func() {
-	// 	for idx := range jobs {
-	// 		availableworker := <-idleworker
-	// 		go func(idx int, availableworker string) {
-	// 			debug("worker: %s", availableworker)
-	// 			args := new(DoTaskArgs)
-	// 			args.JobName = mr.jobName
-	// 			args.TaskNumber = idx
-	// 			args.NumOtherPhase = nios
-	// 			args.Phase = phase
-	// 			if phase == mapPhase {
-	// 				args.File = mr.files[idx]
-	// 			}
-	// 			ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
-	// 			if ok == true {
-	// 				doneworks <- true
-	// 				idleworker <- availableworker
-	// 			} else {
-	// 				jobs <- idx
-	// 			}
-	// 		}(idx, availableworker)
-	// 	}
-	// }()
-
-	// for i := 0; i < ntasks; i++ {
-	// 	<-doneworks
-	// }
-	// close(jobs)
-
-	//ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
-	idleworker := make(chan string)
 	go func() {
-		for {
-			newRegister := <-mr.registerChannel
-			idleworker <- newRegister
+		//for idx := range jobs {
+		for idx := 0; idx < ntasks; idx++ {
+
+			go func(idx int) {
+
+				args := new(DoTaskArgs)
+				args.JobName = mr.jobName
+				args.TaskNumber = idx
+				args.NumOtherPhase = nios
+				args.Phase = phase
+				if phase == mapPhase {
+					args.File = mr.files[idx]
+				}
+				for {
+					availableworker := <-idleworker
+					debug("worker: %s", availableworker)
+					ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
+					if ok == true {
+						doneworks <- true
+						idleworker <- availableworker
+						break
+					} else {
+						//jobs <- idx
+					}
+				}
+
+			}(idx)
 		}
 	}()
-	//var wg sync.WaitGroup
-	doneworks := make(chan bool)
-	//wg.Add(ntasks)
-	for i := 0; i < ntasks; i++ {
-		go func(i int) {
-			args := new(DoTaskArgs)
-			if phase == "mapPhase" {
-				args.File = mr.files[i]
-			}
-			args.JobName = mr.jobName
-			args.NumOtherPhase = nios
-			args.Phase = phase
-			args.TaskNumber = i
-			for {
-				worker := <-idleworker
-				debug("worker:%s\n", worker)
-				ok := call(worker, "Worker.DoTask", args, new(struct{}))
-				if ok {
-					//wg.Done()
-					doneworks <- true
-					///放在if里面因为可能是worker本身错误，若是这样放在外面可能还会导致失败(失败继续就是了？？测试看看吧)
-					idleworker <- worker
-					break
-				}
-			}
 
-		}(i)
-	}
-	//wg.Wait()
 	for i := 0; i < ntasks; i++ {
 		<-doneworks
 	}
+	//close(jobs)
+
+	//ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
+	// idleworker := make(chan string)
+	// go func() {
+	// 	for {
+	// 		newRegister := <-mr.registerChannel
+	// 		idleworker <- newRegister
+	// 	}
+	// }()
+	// //var wg sync.WaitGroup
+	// doneworks := make(chan bool)
+	// //wg.Add(ntasks)
+	// for i := 0; i < ntasks; i++ {
+	// 	go func(i int) {
+	// 		args := new(DoTaskArgs)
+	// 		if phase == "mapPhase" {
+	// 			args.File = mr.files[i]
+	// 		}
+	// 		args.JobName = mr.jobName
+	// 		args.NumOtherPhase = nios
+	// 		args.Phase = phase
+	// 		args.TaskNumber = i
+	// 		for {
+	// 			worker := <-idleworker
+	// 			debug("worker:%s\n", worker)
+	// 			ok := call(worker, "Worker.DoTask", args, new(struct{}))
+	// 			if ok {
+	// 				//wg.Done()
+	// 				doneworks <- true
+	// 				///放在if里面因为可能是worker本身错误，若是这样放在外面可能还会导致失败(失败继续就是了？？测试看看吧)
+	// 				idleworker <- worker
+	// 				break
+	// 			}
+	// 		}
+
+	// 	}(i)
+	// }
+	// //wg.Wait()
+	// for i := 0; i < ntasks; i++ {
+	// 	<-doneworks
+	// }
 
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
