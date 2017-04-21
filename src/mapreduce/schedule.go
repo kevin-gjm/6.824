@@ -2,7 +2,6 @@ package mapreduce
 
 import (
 	"fmt"
-	"sync"
 )
 
 // schedule starts and waits for all tasks in the given phase (Map or Reduce).
@@ -48,36 +47,87 @@ func (mr *Master) schedule(phase jobPhase) {
 			3.中间执行过程中若有失败情况，则需要重新执行此项任务
 			4.实验手册中提示：Hint: You may find sync.WaitGroup useful.
 	*/
+	idleworker := make(chan string)
+	jobs := make(chan int)
+	doneworks := make(chan bool)
+	go func() {
+		for {
+			newRegister := <-mr.registerChannel
+			idleworker <- newRegister
+		}
+	}()
 
-	//ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
-	var wg sync.WaitGroup
+	go func() {
+		for _, w := range mr.workers {
+			idleworker <- w
+		}
+	}()
+
+	go func() {
+		for i := 0; i < ntasks; i++ {
+			jobs <- i
+		}
+	}()
+
+	go func() {
+		for idx := range jobs {
+			availableworker := <-idleworker
+			go func(idx int, availableworker string) {
+				debug("worker: %s", availableworker)
+				args := new(DoTaskArgs)
+				args.JobName = mr.jobName
+				args.TaskNumber = idx
+				args.NumOtherPhase = nios
+				args.Phase = phase
+				if phase == mapPhase {
+					args.File = mr.files[idx]
+				}
+				ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
+				if ok == true {
+					doneworks <- true
+					idleworker <- availableworker
+				} else {
+					jobs <- idx
+				}
+			}(idx, availableworker)
+		}
+	}()
 
 	for i := 0; i < ntasks; i++ {
-		go func(i int) {
-			wg.Add(1)
-			args := new(DoTaskArgs)
-			if phase == "mapPhase" {
-				args.File = mr.files[i]
-			}
-			args.JobName = mr.jobName
-			args.NumOtherPhase = nios
-			args.Phase = phase
-			args.TaskNumber = i
-			for {
-				idleworker := <-mr.registerChannel
-				ok := call(idleworker, "Worker.DoTask", args, new(struct{}))
-				if ok {
-					wg.Done()
-					///放在if里面因为可能是worker本身错误，若是这样放在外面可能还会导致失败(失败继续就是了？？测试看看吧)
-					mr.registerChannel <- idleworker
-				}
-
-			}
-
-		}(i)
+		<-doneworks
 	}
+	close(jobs)
 
-	wg.Wait()
+	// //ok := call(availableworker, "Worker.DoTask", args, new(struct{}))
+	// var wg sync.WaitGroup
+
+	// for i := 0; i < ntasks; i++ {
+	// 	go func(i int) {
+	// 		wg.Add(1)
+	// 		args := new(DoTaskArgs)
+	// 		if phase == "mapPhase" {
+	// 			args.File = mr.files[i]
+	// 		}
+	// 		args.JobName = mr.jobName
+	// 		args.NumOtherPhase = nios
+	// 		args.Phase = phase
+	// 		args.TaskNumber = i
+	// 		for {
+	// 			idleworker := <-mr.registerChannel
+	// 			ok := call(idleworker, "Worker.DoTask", args, new(struct{}))
+	// 			if ok {
+	// 				wg.Done()
+	// 				///放在if里面因为可能是worker本身错误，若是这样放在外面可能还会导致失败(失败继续就是了？？测试看看吧)
+	// 				mr.registerChannel <- idleworker
+	// 				break
+	// 			}
+
+	// 		}
+
+	// 	}(i)
+	// }
+
+	// wg.Wait()
 
 	fmt.Printf("Schedule: %v phase done\n", phase)
 }
