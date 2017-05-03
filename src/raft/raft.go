@@ -18,6 +18,8 @@ package raft
 //
 
 import (
+	"bytes"
+	"encoding/gob"
 	"labrpc"
 	"math/rand"
 	"sync"
@@ -26,10 +28,11 @@ import (
 
 // import "bytes"
 // import "encoding/gob"
-
-var FOLLOWER = "FOLLOWER"
-var LEADER = "LEADER"
-var CANDIDATE = "CANDIDATE"
+const (
+	FOLLOWER  = "FOLLOWER"
+	LEADER    = "LEADER"
+	CANDIDATE = "CANDIDATE"
+)
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -108,6 +111,12 @@ func (rf *Raft) persist() {
 	// e.Encode(rf.yyy)
 	// data := w.Bytes()
 	// rf.persister.SaveRaftState(data)
+	buf := new(bytes.Buffer)
+	enc := gob.NewEncoder(buf)
+	enc.Encode(rf.currentTerm)
+	enc.Encode(rf.votedFor)
+	enc.Encode(rf.log)
+	rf.persister.SaveRaftState(buf.Bytes())
 }
 
 //
@@ -120,6 +129,13 @@ func (rf *Raft) readPersist(data []byte) {
 	// d := gob.NewDecoder(r)
 	// d.Decode(&rf.xxx)
 	// d.Decode(&rf.yyy)
+	if data != nil {
+		buf := bytes.NewBuffer(data)
+		dec := gob.NewDecoder(buf)
+		dec.Decode(&rf.currentTerm)
+		dec.Decode(&rf.votedFor)
+		dec.Decode(rf.log)
+	}
 }
 
 //
@@ -138,9 +154,9 @@ type AppendEntryArgs struct {
 //AppendEntry RPC  reply structure.
 //
 type AppendEntryReply struct {
-	Term    int
-	Success bool
-	//LeaderCommit int
+	Term        int
+	Success     bool
+	CommitIndex int
 }
 
 //
@@ -218,7 +234,7 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 
 }
 
-func (rf *Raft) RequestAppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
+func (rf *Raft) AppendEntries(args AppendEntryArgs, reply *AppendEntryReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -231,9 +247,41 @@ func (rf *Raft) RequestAppendEntries(args AppendEntryArgs, reply *AppendEntryRep
 		rf.votedFor = -1
 		rf.grantedVotesCount = 0
 		reply.Term = rf.currentTerm
-		reply.Success = true
-		rf.resetTimer()
+
+		//找到正确的term和index
+		if args.PreLogIndex >= 0 && (len(rf.log)-1 < args.PreLogIndex || rf.log[args.PreLogIndex].Term != args.PreLogTerm) {
+			reply.CommitIndex = len(rf.log) - 1
+			if reply.CommitIndex > args.PreLogIndex {
+				reply.CommitIndex = args.PreLogIndex //?????
+			}
+
+			for reply.CommitIndex >= 0 {
+				if rf.log[reply.CommitIndex].Term == args.PreLogTerm {
+					break
+				}
+				reply.CommitIndex--
+			}
+			reply.Success = false
+		} else if args.Entries != nil {
+			rf.log = rf.log[:args.PreLogIndex+1]
+			rf.log = append(rf.log, args.Entries...) //将后一个slice添加到前一个slice中，只接受两个参数，且需要在最后面加上三个点
+			if len(rf.log)-1 >= args.LeaderCommit {
+				rf.commitIndex = args.LeaderCommit
+				go rf.commitLogs()
+			}
+			reply.CommitIndex = len(rf.log) - 1
+			reply.Success = true
+		} else {
+			//心跳
+			if len(rf.log)-1 >= args.LeaderCommit {
+				rf.commitIndex = args.LeaderCommit
+				go rf.commitLogs()
+			}
+			reply.CommitIndex = args.PreLogIndex
+			reply.Success = true
+		}
 	}
+	rf.resetTimer()
 	rf.persist()
 
 }
@@ -260,7 +308,7 @@ func (rf *Raft) sendRequestVote(server int, args RequestVoteArgs, reply *Request
 	return ok
 }
 func (rf *Raft) sendRequestAppendEntries(server int, args AppendEntryArgs, reply *AppendEntryReply) bool {
-	ok := rf.peers[server].Call("Raft.RequestAppendEntries", args, reply)
+	ok := rf.peers[server].Call("Raft.AppendEntries", args, reply)
 	return ok
 }
 
@@ -278,10 +326,24 @@ func (rf *Raft) sendRequestAppendEntries(server int, args AppendEntryArgs, reply
 // the leader.
 //
 func (rf *Raft) Start(command interface{}) (int, int, bool) {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
 	index := -1
 	term := -1
-	isLeader := true
+	isLeader := false
 
+	nlog := LogEntry{command, rf.currentTerm}
+
+	if rf.state != LEADER {
+		return index, term, isLeader
+	}
+
+	isLeader = (rf.state == LEADER)
+	rf.log = append(rf.log, nlog)
+	index = len(rf.log)
+	term = rf.currentTerm
+	rf.persist()
 	return index, term, isLeader
 }
 
@@ -298,7 +360,7 @@ func (rf *Raft) resetTimer() {
 	rf.timer.Stop()
 	var timeOut int
 	if rf.state == LEADER {
-		timeOut = 20
+		timeOut = 50
 	} else {
 		electiontimeout := 100
 		timeOut = electiontimeout + rand.Intn(2*electiontimeout)
@@ -371,19 +433,21 @@ func (rf *Raft) sendAppendEntriesToAllFollwer() {
 		if args.PreLogIndex >= 0 {
 			args.PreLogTerm = rf.log[args.PreLogIndex].Term
 		}
-
+		if rf.nextIndex[i] < len(rf.log) {
+			args.Entries = rf.log[rf.nextIndex[i]:]
+		}
 		go func(server int, args AppendEntryArgs) {
 			var replay AppendEntryReply
 			ok := rf.sendRequestAppendEntries(server, args, &replay)
 			if ok {
-				rf.handleAppendEntries(replay)
+				rf.handleAppendEntries(server, replay)
 			}
 		}(i, args)
 
 	}
 }
 
-func (rf *Raft) handleAppendEntries(replay AppendEntryReply) {
+func (rf *Raft) handleAppendEntries(server int, replay AppendEntryReply) {
 	rf.mu.Lock()
 	defer rf.mu.Unlock()
 
@@ -396,7 +460,43 @@ func (rf *Raft) handleAppendEntries(replay AppendEntryReply) {
 		rf.votedFor = -1
 		rf.grantedVotesCount = 0
 		rf.resetTimer()
+		return
 	}
+	if replay.Success {
+		rf.nextIndex[server] = replay.CommitIndex + 1
+		rf.matchIndex[server] = replay.CommitIndex
+		replay_count := 1
+		for i := 0; i < len(rf.peers); i++ {
+			if i == rf.me {
+				continue
+			}
+			if rf.matchIndex[i] >= rf.matchIndex[server] {
+				replay_count++
+			}
+		}
+		if replay_count >= majority(len(rf.peers)) &&
+			rf.commitIndex < rf.matchIndex[server] && //若是已经提交了的就不用管了
+			rf.log[rf.matchIndex[server]].Term == rf.currentTerm {
+			rf.commitIndex = rf.matchIndex[server]
+			go rf.commitLogs()
+		}
+	} else {
+		rf.nextIndex[server] = replay.CommitIndex + 1
+		rf.sendAppendEntriesToAllFollwer()
+	}
+}
+func (rf *Raft) commitLogs() {
+	rf.mu.Lock()
+	defer rf.mu.Unlock()
+
+	if rf.commitIndex > len(rf.log)-1 {
+		rf.commitIndex = len(rf.log) - 1
+	}
+
+	for i := rf.lastApplied + 1; i <= rf.commitIndex; i++ {
+		rf.applyCh <- ApplyMsg{Index: i + 1, Command: rf.log[i].Command}
+	}
+	rf.lastApplied = rf.commitIndex
 }
 func (rf *Raft) handleVoteResult(replay RequestVoteReply) {
 	rf.mu.Lock()
@@ -425,8 +525,8 @@ func (rf *Raft) handleVoteResult(replay RequestVoteReply) {
 				}
 				rf.nextIndex[i] = len(rf.log)
 				rf.matchIndex[i] = -1
-				//发送心跳
 			}
+			//rf.sendAppendEntriesToAllFollwer()
 
 		}
 		return
@@ -466,8 +566,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.votedFor = -1
 	rf.log = make([]LogEntry, 0)
 
-	rf.commitIndex = 0
-	rf.lastApplied = 0
+	rf.commitIndex = -1
+	rf.lastApplied = -1
 
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
