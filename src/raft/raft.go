@@ -134,7 +134,7 @@ func (rf *Raft) readPersist(data []byte) {
 		dec := gob.NewDecoder(buf)
 		dec.Decode(&rf.currentTerm)
 		dec.Decode(&rf.votedFor)
-		dec.Decode(rf.log)
+		dec.Decode(&rf.log)
 	}
 }
 
@@ -194,8 +194,8 @@ func (rf *Raft) RequestVote(args RequestVoteArgs, reply *RequestVoteReply) {
 
 	// term and index <= votefor
 	if len(rf.log) > 0 {
-		if rf.log[len(rf.log)-1].Term > args.Term ||
-			(rf.log[len(rf.log)-1].Term == args.Term && len(rf.log)-1 > args.LastLogIndex) {
+		if rf.log[len(rf.log)-1].Term > args.LastLogTerm ||
+			(rf.log[len(rf.log)-1].Term == args.LastLogTerm && len(rf.log)-1 > args.LastLogIndex) {
 			mayGantVote = false
 		}
 	}
@@ -595,3 +595,4 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 ////TODO
 //重新封装，将中间的代码封装成函数。如发送投票请求
+//参考https://github.com/bysui/mit6.824/blob/master/src/raft/raft.go代码与博客http://blog.csdn.net/bysui/article/category/6321674
