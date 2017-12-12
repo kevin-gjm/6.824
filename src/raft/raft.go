@@ -24,6 +24,7 @@ import (
 	"math/rand"
 	"sync"
 	"time"
+	"fmt"
 )
 
 // import "bytes"
@@ -312,8 +313,8 @@ func Make(peers []*labrpc.ClientEnd, me int,
 	rf.log = make([]LogEntry, 0)
 
 	//这里用的是0到时候要改变整个logcommit部分
-	rf.commitIndex = 0
-	rf.lastApplied = 0
+	rf.commitIndex = -1
+	rf.lastApplied = -1
 	rf.nextIndex = make([]int, len(peers))
 	rf.matchIndex = make([]int, len(peers))
 
@@ -493,10 +494,9 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.votedFor = -1
 		rf.grantedVotesCount = 0
 		reply.Term = rf.currentTerm
-
+		fmt.Printf("AppendEntries  prelogindex %d,prelogterm:%d,leadercommit:%d\n",args.PreLogIndex,args.PreLogTerm,args.LeaderCommit)
 		// 获得正确的term和index返回给leader。与leader的日志长度不一样情况下
-		if args.PreLogIndex >= 0 && (len(rf.log)-1 < args.PreLogIndex ||
-			rf.log[args.PreLogIndex].Term != args.PreLogTerm) {
+		if args.PreLogIndex >= 0 && (len(rf.log)-1 < args.PreLogIndex ||rf.log[args.PreLogIndex].Term != args.PreLogTerm) {
 			reply.CommitIndex = len(rf.log) - 1 //本地提交的日志。
 			if reply.CommitIndex > args.PreLogIndex {
 				reply.CommitIndex = args.PreLogIndex //比leader超前的部分需要丢弃，与leader保持一致
@@ -508,7 +508,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				reply.CommitIndex-- //若不存在与args.PreLogTerm相同的index则从0开始重新开始搞
 			}
 			reply.Success = false
-		} else {
+		} else 
 			// preLogIndex/term都是正常的，此时进行log操作
 			if args.Entries != nil {
 				//进行日志操作
@@ -530,7 +530,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 				reply.CommitIndex = args.PreLogIndex
 			}
 
-		}
+		
 		rf.persist()
 	}
 
