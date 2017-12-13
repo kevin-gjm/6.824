@@ -24,7 +24,7 @@ import (
 	"math/rand"
 	"sync"
 	"time"
-	"fmt"
+	//"fmt"
 )
 
 // import "bytes"
@@ -262,7 +262,7 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 	index := -1
 	term := -1
-	isLeader := true
+	isLeader := false
 
 	// Your code here (2B).
 	if rf.state != LEADER {
@@ -494,7 +494,7 @@ func (rf *Raft) AppendEntries(args *AppendEntriesArgs, reply *AppendEntriesReply
 		rf.votedFor = -1
 		rf.grantedVotesCount = 0
 		reply.Term = rf.currentTerm
-		fmt.Printf("AppendEntries  prelogindex %d,prelogterm:%d,leadercommit:%d\n",args.PreLogIndex,args.PreLogTerm,args.LeaderCommit)
+		//fmt.Printf("AppendEntries  prelogindex %d,prelogterm:%d,leadercommit:%d\n",args.PreLogIndex,args.PreLogTerm,args.LeaderCommit)
 		// 获得正确的term和index返回给leader。与leader的日志长度不一样情况下
 		if args.PreLogIndex >= 0 && (len(rf.log)-1 < args.PreLogIndex ||rf.log[args.PreLogIndex].Term != args.PreLogTerm) {
 			reply.CommitIndex = len(rf.log) - 1 //本地提交的日志。
